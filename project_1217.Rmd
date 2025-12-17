@@ -1,0 +1,158 @@
+---
+title: "project_1217"
+output: html_document
+date: "2025-12-17"
+---
+
+```{r}
+data = read.csv('project_data_1217.csv')
+head(data)
+```
+
+
+```{r}
+df = data
+df$has_garage_label <- factor(df$has_garage, 
+                               levels = c(0, 1),
+                               labels = c("No Garage", "Has Garage"))
+
+df$has_dropoff_label <- factor(df$has_dropoff, 
+                               levels = c(0, 1),
+                              labels = c("No Dropoff", "Has Dropoff"))
+
+```
+
+
+```{r}
+
+#stripchart(inspections ~ has_garage_label, vertical=TRUE, method='jitter', pch=16,
+#           data = df,
+#           main = "Rat Inspections by Garage Presence",
+#           xlab = "Garage Status",
+#           ylab = "Number of Inspections")
+
+#stripchart(inspections ~ has_dropoff_label, vertical=TRUE, method='jitter', pch=16,
+#           data = df,
+#           main = "Rat Inspections by Dropoff Presence",
+#           xlab = "Dropoff Status",
+#           ylab = "Number of Inspections")
+```
+
+```{r}
+# Simple Linear Regression
+model <- lm(inspections ~ population, data=df)
+summary(model)
+
+plot(df$population, df$inspections, xlab='Population', ylab='Rat Inspections', 
+     main='Population vs. Rat Inspections by Zip Code')
+abline(model, col='red')
+
+# Full regression model
+full_model <- lm(inspections ~ population + has_garage + has_dropoff, data=df)
+summary(full_model)
+```
+
+```{r}
+
+corr_data <- regression_with_parks_df %>% 
+  select(inspections, population, has_garage, has_dropoff, total_park_acres)
+corr_matrix <- cor(corr_data, use = "complete.obs")
+kable(round(corr_matrix, 2), caption = "Correlation Matrix for Key Variables")
+
+corrplot(
+  corr_matrix,
+  method = "color",
+  type = "upper",              # Only show upper half
+  addCoef.col = "black",       # Add correlation coefficients
+  tl.col = "black",            # Text color
+  tl.srt = 45,                 # Label rotation
+  number.cex = 0.7,            # Size of correlation numbers
+  col = colorRampPalette(c("skyblue", "white", "tomato"))(200),
+  title = "Correlation Matrix of Key Variables",
+  mar = c(0,0,2,0)
+)
+
+```
+
+
+
+```{r}
+#interaction plots 
+library(ggplot2)
+
+ggplot(df, aes(x = population, y = inspections, color = factor(has_dropoff))) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    color = "Has Drop-off",
+    title = "Rat Inspections vs Population by Food Scrap Drop-off Presence"
+  )
+
+
+ggplot(df, aes(x = population, y = inspections, color = factor(has_garage))) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    color = "Has Garage",
+    title = "Rat Inspections vs Population by DSNY Garage Presence"
+  )
+
+#litter_bin is continuous so binning it in order to asseess interaction
+df$litter_bin = cut(
+  df$litter_basket_count,
+  breaks = quantile(df$litter_basket_count, probs = c(0, .33, .66, 1)),
+  include.lowest = TRUE
+)
+
+ggplot(df, aes(x = population, y = inspections, color = litter_bin)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = FALSE)
+
+```
+
+As population increases, ZIP codes with food scrap drop-off sites experience a faster increase in rat inspections than ZIP codes without drop-off sites.
+
+ZIP codes containing DSNY garages have substantially higher median population than those without garages and span a narrower portion of the population distribution. This limited overlap results in unstable estimation of population-dependent effects within the garage group, suggesting that apparent slope differences reflect data structure rather than a meaningful interaction. In contrast, food scrap drop-off sites are observed across a wider range of population levels, allowing for more reliable assessment of interaction effects with population
+
+
+```{r}
+
+#TESTING
+df_modeling = df[, -c(1,8,9)]
+
+full_model = lm(inspections ~ (.)^2, data = df_modeling ); #summary(full_model)
+red_1 = lm(inspections ~., data = df_modeling); #summary(red_1)
+red_2 = lm(inspections ~. + I(population * has_dropoff) + I(population * has_garage) + I(population * litter_basket_count), data = df_modeling); #summary(red_2)
+
+#dropping park acres 
+#df_modeling2 = df_modeling[, -6]
+#red_3 = lm(inspections ~ (.)^2 , data = df_modeling2); summary(red_3)
+
+```
+
+
+```{r}
+
+box_cox_base_model = lm(inspections ~., data = df_modeling); summary(box_cox_base_model)
+bc = boxcox(box_cox_base_model, lambda = seq(-1, 1, by = 0.05))
+lambda_hat = bc$x[which.max(bc$y)]; lambda_hat
+
+df_modeling2 = df_modeling
+df_modeling2$log_inspections = log(df_modeling$inspections)
+df_modeling2 = df_modeling2[, -1]
+
+log_base_model = lm(log_inspections ~ ., data = df_modeling2); summary(log_base_model)
+
+log_full_model = lm(log_inspections ~ (.)^2, data = df_modeling2); summary(log_full_model)
+
+log_model = lm(log_inspections ~ population * has_dropoff + population * has_garage + population * litter_basket_count, data = df_modeling2); summary(log_model)
+
+
+residuals = rstudent(log_model)
+hist(residuals)
+qqnorm(residuals)
+qqline(residuals)
+
+```
+
+The histogram of studentized residuals is approximately symmetric and centered near zero, with most observations falling within ±2. Mild right-tail behavior remains, consistent with the presence of a small number of high-inspection ZIP codes, but no severe departures from normality are observed.
