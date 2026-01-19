@@ -9,7 +9,6 @@ data = read.csv('project_data_1217.csv')
 head(data)
 ```
 
-
 ```{r}
 df = data
 df$has_garage_label <- factor(df$has_garage, 
@@ -21,7 +20,6 @@ df$has_dropoff_label <- factor(df$has_dropoff,
                               labels = c("No Dropoff", "Has Dropoff"))
 
 ```
-
 
 ```{r}
 
@@ -75,7 +73,6 @@ corrplot(
 ```
 
 
-
 ```{r}
 #interaction plots 
 library(ggplot2)
@@ -97,7 +94,7 @@ ggplot(df, aes(x = population, y = inspections, color = factor(has_garage))) +
     title = "Rat Inspections vs Population by DSNY Garage Presence"
   )
 
-#litter_bin is continuous so binning it in order to asseess interaction
+#litter_bin is continuous so binning it in order to assess interaction
 df$litter_bin = cut(
   df$litter_basket_count,
   breaks = quantile(df$litter_basket_count, probs = c(0, .33, .66, 1)),
@@ -109,11 +106,6 @@ ggplot(df, aes(x = population, y = inspections, color = litter_bin)) +
   geom_smooth(method = "lm", se = FALSE)
 
 ```
-
-As population increases, ZIP codes with food scrap drop-off sites experience a faster increase in rat inspections than ZIP codes without drop-off sites.
-
-ZIP codes containing DSNY garages have substantially higher median population than those without garages and span a narrower portion of the population distribution. This limited overlap results in unstable estimation of population-dependent effects within the garage group, suggesting that apparent slope differences reflect data structure rather than a meaningful interaction. In contrast, food scrap drop-off sites are observed across a wider range of population levels, allowing for more reliable assessment of interaction effects with population
-
 
 ```{r}
 
@@ -130,11 +122,13 @@ red_2 = lm(inspections ~. + I(population * has_dropoff) + I(population * has_gar
 
 ```
 
-
 ```{r}
 
 box_cox_base_model = lm(inspections ~., data = df_modeling); summary(box_cox_base_model)
-bc = boxcox(box_cox_base_model, lambda = seq(-1, 1, by = 0.05))
+shapiro.test(rstudent(box_cox_base_model))
+bptest(box_cox_base_model)
+
+bc = boxcox(box_cox_base_model, lambda = seq(-1, 1, by = 0.05), plotit = TRUE)
 lambda_hat = bc$x[which.max(bc$y)]; lambda_hat
 
 df_modeling2 = df_modeling
@@ -148,7 +142,51 @@ log_full_model = lm(log_inspections ~ (.)^2, data = df_modeling2); summary(log_f
 log_model = lm(log_inspections ~ population * has_dropoff + population * has_garage + population * litter_basket_count, data = df_modeling2); summary(log_model)
 
 
-### STUDENTIZED DELETED RESIDUALS
+### STUDENTIZED DELETED RESIDUALS LOG BASE MODEL
+stu_del_resid = rstudent(log_base_model)
+##QQ Plot
+qqnorm(stu_del_resid, 
+       pch = 20, col = "navy", cex = 1.0,
+       main = "QQPlot: Studentized Deleted Residuals")
+qqline(stu_del_resid, 
+       lwd = 1, col = "maroon")
+##Histogram 
+hist(stu_del_resid,
+     col = "cadetblue2", border = "darkblue", lwd = 1,
+     main = "Histogram: Studentized Deleted Residuals",
+     xlab = "Studentized Deleted Residuals")
+##Line Plot
+plot(stu_del_resid,
+     type = 'l', col = "cadetblue", lwd = 2,
+     main = "Line Plot: Studentized Deleted Residuals",
+     ylab = "Studentized Deleted Residuals")
+abline(h = 0, lwd = 1, lty = 2, col = "darkblue")
+##vs predicted values 
+plot(x = fitted(model), y = stu_del_resid,
+     pch = 16, col = "deepskyblue4", cex = 1.2,
+     main = "Studentized Deleted Residuals vs. Predicted (Fitted) Values",
+     ylab = "Studentized Deleted Residuals",
+     xlab = "Predicted (Fitted) Values")
+abline(h = 0, lwd = 1, lty = 2, col = "maroon")
+
+shapiro.test(rstudent(log_base_model))
+max(cooks.distance(log_base_model))
+library(lmtest)
+bptest(log_base_model)
+
+PRESS = sum((residuals(log_model) / (1 - hatvalues(log_model)))^2)
+MSPR = PRESS / length(residuals(log_model))
+MSPR
+MSE = mean(residuals(log_model)^2)
+MSE
+
+install.packages('car')
+library(car)
+vif(log_model, type = 'predictor')
+
+
+
+### STUDENTIZED DELETED RESIDUALS FINAL MODEL 
 stu_del_resid = rstudent(log_model)
 ##QQ Plot
 qqnorm(stu_del_resid, 
@@ -176,12 +214,17 @@ plot(x = fitted(model), y = stu_del_resid,
 abline(h = 0, lwd = 1, lty = 2, col = "maroon")
 
 shapiro.test(rstudent(log_model))
+max(cooks.distance(log_model))
+library(lmtest)
+bptest(log_model)
 
+PRESS = sum((residuals(log_model) / (1 - hatvalues(log_model)))^2)
+MSPR = PRESS / length(residuals(log_model))
+MSPR
+MSE = mean(residuals(log_model)^2)
+MSE
 
+install.packages('car')
+library(car)
+vif(log_model, type = 'predictor')
 ```
-
-The histogram of studentized residuals is approximately symmetric and centered near zero, with most observations falling within ±2. Mild right-tail behavior remains, consistent with the presence of a small number of high-inspection ZIP codes, but no severe departures from normality are observed.
-
-A normal Q–Q plot of the studentized residuals shows strong agreement with normality across the central quantiles, with only mild deviations in the upper tail. This behavior is consistent with the log-transformed count nature of the response and does not indicate a substantial violation of model assumptions
-
-Shapiro-Wilk Normality Test---> Null Hypothesis is Residuals are Normal. P-value = 0.7877 ==> no evidence against normality. W ~~ 1 ==> No evidence against nromality 
